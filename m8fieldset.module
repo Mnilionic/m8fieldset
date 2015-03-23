@@ -1,0 +1,843 @@
+<?php
+
+
+function m8fieldset_entity_info() {
+    $entity = array(
+        'm8fieldset' => array(                            
+            'label' => 'M8 Fieldset',                        
+            'controller class' => 'DrupalDefaultEntityController',
+            'base table' => 'm8fieldset',
+            'uri callback' => 'm8fieldset_uri',
+            'label callback' => 'callback_entity_info_label',
+            'fieldable' => TRUE,
+            'entity keys' => array(
+                'id' => 'id',
+                'bundle' => 'type',
+            ),
+            'bundle keys' => array(
+                'bundle' => 'type',
+            ),
+            'bundles' => array(),
+            'module' => 'm8fieldset',
+            'view modes' => array(
+                'full' => array(
+                    'label' => t('Full'),
+                    'custom settings' => FALSE,
+                ),
+                'teaser' => array(
+                    'label' => t('Teaser'),
+                    'custom settings' => TRUE,
+                ),
+            ),
+        ),
+    );
+    //
+    foreach (m8fieldset_get_types() as $key => $type) {
+        $entity['m8fieldset']['bundles'][$key] = array(
+            'label' => $type->label,
+            'admin' => array(
+                'path' =>      'admin/structure/m8fieldset/manage/%m8fieldset_type',
+                'real path' => 'admin/structure/m8fieldset/manage/' . str_replace('_', '-', $key),
+                'bundle argument' => 4,
+                'access arguments' => array('administer content types'),
+            ),
+        );
+    }
+    return $entity;
+}
+
+
+function m8fieldset_uri($m8fieldset) {
+    return array(
+        'path' => 'm8fieldset/' .$m8fieldset->id,
+    );
+}
+
+// список всех типов
+function m8fieldset_get_types(){
+    $types = array();
+    $result = db_select('m8fieldset_type', 't')->fields('t')->execute();
+    foreach($result as $record) {
+        $types[$record->type] = $record;
+    }
+    return $types;
+}
+
+// получение объекта бандла (используется для плейcхолдеров в url)
+function m8fieldset_type_load($name){
+    $key = strtr($name, array('-' => '_'));
+    $types = m8fieldset_get_types();
+    if (isset($types[$key])){
+        return $types[$key];
+    }
+    return FALSE;
+}
+
+/**********/
+
+function m8fieldset_menu() {
+    $items = array();
+    // список типов
+    $items['admin/structure/m8fieldset'] = array(
+        'title' => t('Fieldset types'),
+        'description' => t('Configure the fieldset types.'),
+        'page callback' => 'm8fieldset_types_overview',
+        'access arguments' => array('administer content types'),
+        'file' => 'm8fieldset.types.inc',
+    );
+        $items['admin/structure/m8fieldset/list'] = array(
+            'title' => 'List',
+            'type' => MENU_DEFAULT_LOCAL_TASK,
+            'weight' => -10,
+        );
+        // добавить тип
+        $items['admin/structure/m8fieldset/add'] = array(
+            'title' => t('Add fieldset type'),
+            'type' => MENU_LOCAL_ACTION,
+            'page callback' => 'drupal_get_form',
+            'page arguments' => array('m8fieldset_type_form'),
+            'access arguments' => array('administer content types'),
+            'file' => 'm8fieldset.types.inc',
+        );
+        $items['admin/structure/m8fieldset/settings'] = array(
+            'title' => t('Settings'),
+            'type' => MENU_LOCAL_TASK,
+            'page callback' => 'drupal_get_form',
+            'page arguments' => array('m8fieldset_settings_form'),
+            'access arguments' => array('administer content types'),
+        );
+
+    $items['admin/structure/m8fieldset/manage/%m8fieldset_type'] = array(
+        'title' => t('Edit fieldset type'),
+        //'title callback' => 'm8fieldset_type_page_title',
+        //'title arguments' => array(4),
+        'page callback' => 'drupal_get_form',
+        'page arguments' => array('m8fieldset_type_form', 4),
+        'access arguments' => array('administer content types'),
+        'file' => 'm8fieldset.types.inc',
+    );
+        $items['admin/structure/m8fieldset/manage/%m8fieldset_type/edit'] = array(
+            'title' => t('Edit'),
+            'type' => MENU_DEFAULT_LOCAL_TASK,
+        );
+        $items['admin/structure/m8fieldset/manage/%m8fieldset_type/delete'] = array(
+            'title' => t('Delete'),
+            'page arguments' => array('m8fieldset_type_delete_confirm', 4),
+            'access arguments' => array('administer content types'),
+            'file' => 'm8fieldset.types.inc',
+        );
+//-----------------
+    // просмотр
+    $items['m8fieldset/%m8fieldset'] = array(
+        'type' => MENU_CALLBACK,
+        'page callback' => 'm8fieldset_page',
+        'page arguments' => array(1),
+        'access callback' => 'm8fieldset_access_calback',
+        'access arguments' => array('view', 1),
+        'title callback' => 'm8fieldset_set_title',
+        'title arguments' => array(1),
+    );
+
+        $items['m8fieldset/%m8fieldset/view'] = array(
+            'type' => MENU_DEFAULT_LOCAL_TASK,
+            'title' => 'View',
+            'weight' => -10,
+        );
+
+        // редактирование 
+        $items['m8fieldset/%m8fieldset/edit'] = array(
+            'type' => MENU_LOCAL_TASK,
+            'title' => t('Edit'),
+            'page callback' => 'drupal_get_form',
+            'page arguments' => array('m8fieldset_form', 1),
+            'access callback' => 'm8fieldset_access_calback',
+            'access arguments' => array('update', 1),
+            'weight' => 20,
+        );
+        // удаление
+        $items['m8fieldset/%m8fieldset/delete'] = array(
+            'type' => MENU_CALLBACK,
+            'title' => t('Delete'),
+            'page callback' => 'drupal_get_form',
+            'page arguments' => array('m8fieldset_delete_confirm', 1),
+            'access callback' => 'm8fieldset_access_calback',
+            'access arguments' => array('delete', 1),
+            'weight' => 22,
+        );
+
+    return $items;
+}
+
+// проверка прав для наших филдсетов
+function m8fieldset_access_calback($op, $m8fieldset, $account = NULL){ 
+    //if ($m8fieldset->target_type == 'node'){
+    //    $access = node_access($op, $m8fieldset->_target, $account);
+    //}
+    //else {
+        $access = entity_access($op, $m8fieldset->target_type, $m8fieldset->_target, $account);
+    //}
+    return $access;
+}
+
+
+
+
+// форма настроек заказов
+function m8fieldset_settings_form($form, &$form_state){
+    $args =& $form_state['build_info']['args'];
+    $form['hi'] = array(
+        '#markup' => 'No settings',
+    );
+    return $form;
+}
+
+
+
+function m8fieldset_set_title($m8fieldset){
+
+    $entity_label = entity_label($m8fieldset->target_type, $m8fieldset->_target);
+
+    $title = t('Fieldset %label for %entity_label', array(
+        '%label' => $m8fieldset->_type->label,
+        '%entity_label' => ($entity_label)? $entity_label: $m8fieldset->target_type .'-' .$m8fieldset->target_id,
+    ));
+
+    drupal_set_title($title, PASS_THROUGH);
+}
+
+/**********************************************************************/
+// програмные поля
+function m8fieldset_field_extra_fields() {
+    $return = array();
+    foreach (m8fieldset_get_types() as $key => $type) {
+        $return['m8fieldset'][$key] = array(
+            'form' => array(
+                'target' => array(
+                    'label' => 'Target info',
+                    'weight' => -1,
+                ),
+            ),
+            'display' => array(
+                'target' => array(
+                    'label' => 'Target info',
+                    'description' => '',
+                    'weight' => -1,
+                ),
+            ),
+        );       
+    }
+    return $return;
+}
+
+
+
+
+
+/*********************************************************************/
+
+
+// загрузка заказа
+function m8fieldset_load($id, $conditions = array(), $reset = FALSE){
+    $ids = array($id);
+    $m8fieldsets = m8fieldset_load_multiple($ids, $conditions, $reset);
+    module_invoke_all('entity_load', $m8fieldsets, 'm8fieldset');
+    return $m8fieldsets? reset($m8fieldsets): FALSE;
+}
+
+function m8fieldset_load_multiple($ids = array(), $conditions = array(), $reset = FALSE) {
+    $m8fieldsets = entity_load('m8fieldset', $ids, $conditions, $reset);
+    // type info
+    $types = m8fieldset_get_types();
+    // load target entity
+    foreach ($m8fieldsets as $id => $m8fieldset) {
+        $target = entity_load($m8fieldset->target_type, (array) $m8fieldset->target_id);
+        $m8fieldsets[$id]->_target = array_shift($target);
+        $m8fieldsets[$id]->_type =& $types[$m8fieldset->type];
+    }
+    return $m8fieldsets;
+}
+
+
+// подготовка к сохранению
+function m8fieldset_entity_presave($m8fieldset, $type){
+
+}
+
+
+// сохранение
+function m8fieldset_save($m8fieldset){
+    module_invoke_all('entity_presave', $m8fieldset, 'm8fieldset');
+    if (empty($m8fieldset->id)){ 
+        m8fieldset_insert($m8fieldset);
+    } else {
+        m8fieldset_update($m8fieldset);
+    }
+    return $m8fieldset;
+}
+
+
+// добавление заказа
+function m8fieldset_insert(&$m8fieldset){
+    field_attach_presave('m8fieldset', $m8fieldset);
+    drupal_write_record('m8fieldset', $m8fieldset);
+    field_attach_insert('m8fieldset', $m8fieldset);
+    return $m8fieldset;
+}
+
+// обновление
+function m8fieldset_update(&$m8fieldset){
+    field_attach_presave('m8fieldset', $m8fieldset);
+    drupal_write_record('m8fieldset', $m8fieldset, 'id');
+    field_attach_update('m8fieldset', $m8fieldset);
+    return $m8fieldset;
+}
+
+// удаление 
+function m8fieldset_delete($id){
+    $m8fieldset = m8fieldset_load($id);
+    if (!$m8fieldset) return FALSE;
+
+    $transaction = db_transaction();
+    try {
+        module_invoke_all('entity_delete', $m8fieldset, 'm8fieldset');
+        field_attach_delete('m8fieldset', $m8fieldset);
+        // удалить запись
+        db_delete('m8fieldset')->condition('id', $m8fieldset->id)->execute();
+    }
+    catch (Exception $e) {
+        $transaction->rollback();
+        watchdog_exception('m8fieldset', $e);
+        throw $e;   
+    }
+    entity_get_controller('m8fieldset')->resetCache();
+}
+
+// информация о сущности, к которой прикреплен филдсет
+function m8fieldset_target_summary($m8fieldset){
+    //$target_entity = entity_load_single($m8fieldset->target_type, $m8fieldset->target_id);
+
+    $label = entity_label($m8fieldset->target_type, $m8fieldset->_target);
+    $uri = entity_uri($m8fieldset->target_type, $m8fieldset->_target);
+
+    $q = db_select('field_config_instance', 'fci');
+    $q->fields('fci', array('field_name', 'data'));
+    $q->condition('fci.id', $m8fieldset->target_field);
+    $fci = $q->execute()->fetchAssoc();
+    $info = unserialize($fci['data']);
+
+
+    $title = 'Untitled';
+    if ($label && $uri) {
+        $title = l($label, $uri['path']);
+    }
+    elseif ($label) {
+        $title = $label;
+    }
+    $str = t('%field_name <small>(!field_machin_name)</small> for "!title" <small>(%entity_type id !entity_id)</small>', array(
+        '%entity_type' => $m8fieldset->target_type,
+        '!entity_id' => $m8fieldset->target_id,
+        '!title' => $title,
+        '%field_name' => $info['label'],
+        '!field_machin_name' => $fci['field_name'],
+    ));
+
+    $element = array(
+        '#markup' => '<div class="m8fieldset-target">'. $str .'</div>',
+    );
+    return $element;
+}
+
+// The node:45 "Welcome to site" at 
+// рендер
+function m8fieldset_view($m8fieldset, $view_mode = 'default'){
+    $m8fieldset->content = array();
+/*
+    $context = array(
+        'entity_type' => 'm8fieldset',
+        'entity' => $m8fieldset,
+        'langcode' => null,
+    );
+    drupal_alter('entity_view_mode', $view_mode, $context);
+*/
+    field_attach_prepare_view('m8fieldset', array($m8fieldset->id => $m8fieldset), $view_mode);
+    entity_prepare_view('m8fieldset', array($m8fieldset->id => $m8fieldset));
+
+    $m8fieldset->content += field_attach_view('m8fieldset', $m8fieldset, $view_mode);
+
+    module_invoke_all('entity_view', $m8fieldset, 'm8fieldset', $view_mode, null);
+
+    //drupal_alter(array('entity_view'), $build, 'm8fieldset');
+
+    $build = array(
+        '#theme' => 'm8fieldset',
+        '#m8fieldset' => $m8fieldset,
+        '#view_mode' => $view_mode,
+    );
+    return $build;
+}
+
+
+
+
+
+/**********************************************************/
+
+
+// форма редактирования
+function m8fieldset_form($form, &$form_state, $m8fieldset = NULL){ 
+    // ссылка на товар понадобится нам в сабмите
+    if (!isset($form_state['m8fieldset'])) $form_state['m8fieldset'] = $m8fieldset;
+    else $m8fieldset = $form_state['m8fieldset'];
+
+    // модульные
+    // описание, подсказки, инфа о сущности
+    $form['target'] = m8fieldset_target_summary($m8fieldset);
+    $form['target']['#type'] = 'item';
+    $form['target']['#title'] = 'Target';
+
+    // cck
+    $form['fields'] = array(
+        '#type' => 'container',
+        '#title' => 'Fields',
+    );
+    // добавляем контент поля
+    field_attach_form('m8fieldset', $m8fieldset, $form['fields'], $form_state, $langcode = NULL, $options = array());
+
+    $form['submit'] = array(
+        '#type' => 'submit',
+        '#value' => t('Save'),
+    );
+    //
+    $form['delete'] = array(
+        '#type' => 'submit',
+        '#value' => t('Delete'),
+        '#limit_validation_errors' => array(),
+    );
+    
+    return $form;
+}
+
+
+// валидация
+function m8fieldset_form_validate($form, &$form_state){
+    /*
+    $v =& $form_state['values'];
+    $pseudo_entity = (object) $v;
+    field_attach_form_validate('m8fieldset', $pseudo_entity, $form, $form_state);
+    */
+}
+
+
+// сохранение
+function m8fieldset_form_submit($form, &$form_state){
+    $v =& $form_state['values'];
+    $op = $form_state['triggering_element']['#parents'][0];
+
+    if ($op == 'delete'){
+        $form_state['redirect'] = array('m8fieldset/'. $form_state['m8fieldset']->id .'/delete');
+        return;
+    }
+    // получаем филдсет из заначки
+    $m8fieldset = $form_state['m8fieldset'];
+    // обновляем свойства филдсета согласно заполненой форме
+    entity_form_submit_build_entity('m8fieldset', $m8fieldset, $form, $form_state);
+    // заполняем свои поля
+    // сохраняем
+    m8fieldset_save($m8fieldset);
+    drupal_set_message(t('Fieldset has been saved.'));
+}
+
+
+
+
+
+
+// подтверждение удаления
+function m8fieldset_delete_confirm($form, &$form_state, $m8fieldset){
+    $form['id'] = array(
+        '#type' => 'value',
+        '#value' => $m8fieldset->id,
+    );
+    return confirm_form($form, t('Are you sure you want to delete %title?', 
+        array('%title' => $m8fieldset->id)), 
+        'm8fieldset/' . $m8fieldset->id, 
+        t('This action cannot be undone.'), 
+        t('Delete'), t('Cancel'));
+}
+function m8fieldset_delete_confirm_submit($form, &$form_state){
+    if ($form_state['values']['confirm']) {
+        $m8fieldset = m8fieldset_load($form_state['values']['id']);
+        m8fieldset_delete($m8fieldset->id);
+        cache_clear_all();
+        watchdog('m8fieldset', 'Deleted m8fieldset ID-!id.', array('!id' => $m8fieldset->id));
+        drupal_set_message(t('Fieldset has been deleted.'));
+    }
+    $form_state['redirect'] = '<front>';
+}
+
+
+// страница просмотра
+function m8fieldset_page($m8fieldset){
+    $build = m8fieldset_view($m8fieldset, 'full');
+    return $build;
+}
+
+
+// при удалении сущности смотрим нет привязки к нашему филдсету и если есть так же удаляем
+function m8fieldset_entity_delete($entity, $type) {
+    //$info = entity_get_info($type);
+    list($id) = entity_extract_ids($type, $entity);
+    $q = db_select('m8fieldset', 'm8f', array('fetch' => PDO::FETCH_ASSOC));
+    $q->fields('m8f', array('id'));
+    $q->condition('m8f.target_id', $id)->condition('m8f.target_type', $type);
+    $records = $q->execute();
+    foreach ($records as $record) {
+        m8fieldset_delete($record['id']);
+    }
+    entity_get_controller('m8fieldset')->resetCache();
+}
+
+
+// поле
+/**************************************************************/
+/*
+
+При создании ноды создаём филдсет по указанному типу.
+Тип в поле не сохраняем (он хранится в филдсете).
+При редактировании ноды показываем тип загруженный из филдсета.
+При смене типа удаляем поля старого типа (пометка в UI)
+При удалении (при удалении чего?) детачим поля, а сам филдсет не удаляем.
+При удалении сущности удаляем и филдсет (и детачим поля если не детачили)
+
+остальное остаётся как есть:
+показываем ссылки "смотреть", "редактировать"
+
+Если удалили филдсет, то в ноде показываем уведомление,
+а при редактировании ноды действуем как при создании
+
+Возможные сообщение:
+- филдсет есть, но не заполнен
+- филдсета нет (удалён, был включен после создания ноды)
+
+*/
+
+
+
+
+function m8fieldset_field_info() {  
+    return array(  
+        'm8fieldset_field' => array(  
+            'label' => t('M8 fieldset'),  
+            'description' => t('Attach predefined fieldset.'),  
+            'instance_settings' => array('list' => array()),
+            'default_widget' => 'm8fieldset_default',                        
+            'default_formatter' => 'm8fieldset_default', 
+            'behaviors' => array( 'default value' => FIELD_BEHAVIOR_NONE), 
+        ), 
+    ); 
+} 
+/*
+function m8fieldset_field_settings_form($field, $instance, $has_data) {
+
+}
+*/
+/**
+ * Implements hook_field_instance_settings_form().
+ */
+function m8fieldset_field_instance_settings_form($field, $instance) {
+    $settings = $instance['settings'];
+
+    $form = array();
+    $form['list'] = array(
+        '#type' => 'item',
+        '#title' => t('Allowed fieldset types'),
+        '#description' => '',
+        '#required' => TRUE,
+    );
+    $types = m8fieldset_get_types();
+    foreach ($types as $key => $type) {
+        $form['list'][$key] = array(
+            '#type' => 'checkbox',
+            '#title' => $type->label,
+            '#description' => $type->description,
+            '#default_value' => !empty($settings['list'][$key]),
+        );
+    }
+    if (!$types){
+        $form['list']['#description'].= t('<p class="warning">You must <a href="@url">add fieldset type</a> before.</p>', array('@url' => 'admin/structure/m8fieldset/add'));
+    }
+    return $form;
+}
+/**
+ * Implements hook_field_widget_info().
+ */
+function m8fieldset_field_widget_info() {
+    return array(
+        'm8fieldset_default' => array(
+            'label' => t('Default'),
+            'field types' => array('m8fieldset_field'),
+            'multiple values' => FIELD_BEHAVIOR_DEFAULT,
+        ),
+    );
+}
+
+// убираем возможность мультиполя
+function m8fieldset_form_field_ui_field_edit_form_alter(&$form, &$form_state, $form_id) {
+    if ($form['#field']['type'] == 'm8fieldset_field') {
+        $form['field']['cardinality']['#options'] = array('1' => 1);
+        $form['instance']['default_value_widget'] = array();
+    }
+}
+
+/**
+ * Implements hook_field_widget_form().
+ */
+
+function m8fieldset_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+    $settings = $instance['settings'];
+    $default = $instance['default_value'][0];
+
+    $element = array(
+        '#type' => 'fieldset',
+        '#title' => $instance['label'],
+        '#description' => $instance['description'],
+        '#attributes' => array('class' => array('m8fieldset-wrapper')),
+    );
+        $all_types = m8fieldset_get_types();
+        // тип филдсета по умолчанию
+        $type = NULL; 
+        // id филдсета
+        $id = isset($items[$delta])? $items[$delta]['id'] : NULL;
+
+        // если есть филдсет
+        if ($id){
+            $m8fieldset = m8fieldset_load($id);
+            if ($m8fieldset){
+                $type = $m8fieldset->type;
+                $uri = m8fieldset_uri($m8fieldset);
+            } 
+            else {
+                $id = NULL;
+            }
+        }
+        // текущий филдсет
+        if ($type){
+            $type_label = (isset($all_types[$type]))? $all_types[$type]->label: '[deprecated]';
+            $element['info'] = array(
+                '#type' => 'item',
+                '#title' => t('Current fieldset type'),
+                '#value' => $type,
+                '#field_prefix' => $type_label  .' <small>' . t('(Machine name: @type)', array('@type' => $type)) . '</small>',
+                '#description' => l(t('view'), $uri['path']). ' | '. l(t('edit'), $uri['path'] .'/edit', array('query' => drupal_get_destination())),
+            );
+        }      
+        // cсписок доступных типов из настроек
+        
+        $options = array();
+        foreach ($settings['list'] as $key => $value) {
+            if ($value && isset($all_types[$key])){ 
+                $label = $all_types[$key]->label;
+                $options[$key] = $label .(($type == $key)? ' ('. t('current') .')': '');
+            }
+        }
+        // если активный тип убрали из доступных
+        if ($type && !isset($options[$type])){
+            $options[$type] = $type .' ('. t('current') .', '. t('deprecated') .')';
+        }
+
+        $element['type'] = array(
+            '#type' => 'select',
+            '#title' => ($type)? t('Change fieldset type') : t('Fieldset type'),
+            '#options' => $options,
+            '#default_value' => $type,
+            '#description' => ($type)? t('if changes then data from current fieldset type will be removed after save.'): '',
+            '#empty' => t('No fieldset types'),
+            '#required' => $instance['required'],
+        );
+        $element['id'] = array(
+            '#type' => 'hidden',
+            '#value' => $id,
+        );
+
+    return $element;
+}
+/**
+ * Implements hook_field_load().
+ */
+/*
+function m8fieldset_field_load($entity_type, $entities, $field, $instances, $langcode, &$items, $age) {
+
+}*/
+/**
+ * Implements hook_field_presave().
+ */
+function m8fieldset_field_presave($entity_type, $entity, $field, $instance, $langcode, &$items) {
+    $settings = $instance['settings'];
+    foreach ($items as $delta => $item) {
+        // если нет привязанного шаблона - создаём его и привязываем
+        if (empty($item['id'])){
+            $id = entity_id($entity_type, $entity);
+            $m8fieldset = array(
+                'type' => $item['type'],
+                'target_id' => $id,
+                'target_type' => $entity_type,
+                'target_field' => $instance['id'],
+            );
+            $m8fieldset = m8fieldset_save((object)$m8fieldset);
+            $items[$delta]['id'] = $m8fieldset->id;
+        }
+        else {
+            $m8fieldset = m8fieldset_load($item['id']);
+            // хотят сменить шаблон
+            if ($m8fieldset->type != $item['type']){
+                // удаляем данные из полей
+                field_attach_delete('m8fieldset', $m8fieldset);
+                // назначаем новый тип
+                $m8fieldset->type = $item['type'];
+                m8fieldset_save($m8fieldset);
+            }
+        }
+    } // foreach items
+}
+
+/**
+ * Implements hook_field_prepare_view().
+ *//*
+function m8fieldset_field_prepare_view($entity_type, $entities, $field, $instances, $langcode, &$items) {
+    foreach ($entities as $id => $entity) {
+        foreach ($items[$id] as $delta => $item) {
+            //$items[$id][$delta]['term'] = $terms[$item['tid']];
+        }
+    }
+}
+*/
+/**
+ * Implement hook_field_is_empty().
+ */
+function m8fieldset_field_is_empty($item, $field) {
+    return empty($item['id']) && empty($item['type']);
+}
+
+// наше поле удали у сущности
+function m8fieldset_field_delete_instance($instance){
+    // 1. можно удалить данные из m8fieldset, где instane id, но тогда не удаляться поля
+    //$nums = db_delete('m8fieldset')->condition('target_field', $instance['id'])->execute();
+    // 2. удалять по одному в цыкле
+    //m8fieldset_delete($id)
+    // 3. удалять по одному через батч
+    // 4. отметить в базе флагом и удалять по одному батчем по крону
+    // удаление в цыкле:
+    $q = db_select('m8fieldset', 'm8f', array('fetch' => PDO::FETCH_ASSOC));
+    $q->fields('m8f', array('id'));
+    $q->condition('m8f.target_field', $instance['id']);
+    $records = $q->execute();
+    $num = 0;
+    foreach ($records as $record) {
+        m8fieldset_delete($record['id']);
+        $num++;
+    }
+    if ($num){
+        drupal_set_message('With field instants has been deleted '. $num .' M8 fieldsets.');
+    }
+}
+
+// наше поле вообще удалили из системы
+function m8fieldset_field_delete_field($field){
+    // наверное если удаление инстанца настроено всё будет ок
+}
+
+
+
+/**
+ * Implementation of hook_field_formatter_info().
+ */
+function m8fieldset_field_formatter_info() {
+    return array(
+        'm8fieldset_default' => array(
+            'label' => t('Default'),
+            'field types' => array('m8fieldset_field'),
+            'multiple values' => FIELD_BEHAVIOR_DEFAULT,
+            'settings' => array(
+                'view' => 'full',
+            ),
+        ),
+        'm8fieldset_teaser' => array(
+            'label' => t('Teaser'),
+            'field types' => array('m8fieldset_field'),
+            'multiple values' => FIELD_BEHAVIOR_DEFAULT,
+            'settings' => array(
+                'view' => 'teaser',
+            ),
+        ),
+    );
+}
+
+function m8fieldset_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
+    $settings = $instance['display']['default']['settings'];
+    $settings = $display['settings'];
+    $elements = array();
+
+    if ($display['type'] == 'm8fieldset_default' || $display['type'] == 'm8fieldset_teaser'){
+        // поле пустое. Возможно оно было добавлено после создания материала.
+        /*
+        if(!$items){ 
+            dsm('empty field');
+        }*/
+        foreach ($items as $delta => $item) {
+            $m8fieldset = m8fieldset_load($item['id']);
+            if($m8fieldset){
+                $build = m8fieldset_view($m8fieldset, $settings['view']);
+                $elements[$delta] = $build;
+                //$elements[$delta] = array('#markup' => $settings['view']);
+            } else {
+                $elements[$delta] = array(
+                    '#markup' => '<div class="messages warning">'. t('Fieldset ID-!id not found.', array('!id' => $item['id'])) .'</div>',
+                );
+            }
+        }
+    }
+
+    return $elements;
+}
+
+/**************************************************************/
+// список адресов будет открываться в оверлее
+function m8fieldset_admin_paths() {
+    $paths = array(
+        'm8fieldset/*/edit' => TRUE,
+        'm8fieldset/*/delete' => TRUE,
+    );
+    return $paths;
+}
+
+
+function m8fieldset_help($path, $arg) {
+    switch ($path) {
+        case 'm8fieldset/%/edit':
+            $m8fieldset = m8fieldset_load($arg[1]);
+            return (!empty($m8fieldset->_type->help) ? '<p>' . filter_xss_admin($m8fieldset->_type->help) . '</p>' : '');
+    }
+}
+
+
+
+function m8fieldset_views_api() {
+  return array(
+    'api' => 2.0,
+    'path' => drupal_get_path('module', 'm8fieldset'),
+  );
+}
+
+
+function m8fieldset_theme($existing, $type, $theme, $path){
+    return array(
+        'm8fieldset' => array(
+            'variables' => array('m8fieldset' => null, 'view_mode' => NULL),
+            'template' => 'm8fieldset',
+        ),
+        'm8fieldset_admin_overview' => array(
+            'variables' => array('type' => NULL),
+            'file' => 'm8fieldset.types.inc',
+        ),
+    );
+}

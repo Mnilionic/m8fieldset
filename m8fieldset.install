@@ -1,0 +1,115 @@
+<?php
+
+function m8fieldset_schema() {
+    $schema['m8fieldset'] = array(
+        'description' => 'The base table for M8 fieldsets.',
+        'fields' => array(
+            'id' => array(
+                'description' => 'Primary identifier.',
+                'type' => 'serial',
+                'unsigned' => TRUE,
+                'not null' => TRUE,
+            ),
+            'vid' => array(
+                'description' => 'Version identifier.',
+                'type' => 'int',
+                'unsigned' => TRUE,
+                'not null' => FALSE,
+                'default' => NULL,
+            ),            
+            'type' => array(
+                'description' => 'Bundle.',
+                'type' => 'varchar',
+                'length' => 32,
+                'not null' => TRUE,
+                'default' => '',
+            ),          
+            'target_id' => array(
+                'description' => 'Entity id.',
+                'type' => 'int',
+                'unsigned' => TRUE,
+                'not null' => FALSE,
+                'default' => NULL,
+            ),
+            'target_type' => array(
+                'description' => 'Entity type.',
+                'type' => 'varchar',
+                'length' => 32,
+                'not null' => TRUE,
+                'default' => '',
+            ),
+            'target_field' => array(
+                'description' => 'Instance id of target field.',
+                'type' => 'int',
+                'unsigned' => TRUE,
+                'not null' => TRUE,
+            ),
+
+        ),
+        'primary key' => array('id'),
+        'foreign keys' => array(),
+        'indexes' => array(
+            'target_id' => array('target_id'),
+            'target_field' => array('target_field'),
+        ),
+    );
+
+    
+    
+    $schema['m8fieldset_type'] = array(
+        'description' => 'Stores information about all m8fieldset types.',
+        'fields' => array(
+            'type' => array(
+                'description' => 'The machine-readable name of this type.',
+                'type' => 'varchar',
+                'length' => 32,
+                'not null' => TRUE,
+            ),
+            'label' => array(
+                'description' => 'The human-readable name of this type.',
+                'type' => 'varchar',
+                'length' => 255,
+                'not null' => TRUE,
+                'default' => '',
+                'translatable' => TRUE,
+            ),
+            'description' => array(
+                'description' => 'A brief description of this type.',
+                'type' => 'text',
+                'not null' => TRUE,
+                'size' => 'medium',
+                'translatable' => TRUE,
+            ),
+            'help' => array(
+                'description' => 'Help information shown to the user when creating a m8fieldset of this type.',
+                'type' => 'text',
+                'not null' => TRUE,
+                'size' => 'medium',
+                'translatable' => TRUE,
+            ),
+        ),
+        
+        'primary key' => array('type'),
+    );
+  
+    return $schema;
+}
+
+
+
+
+/**
+ * Implements hook_field_schema().
+ */
+function m8fieldset_field_schema($field) {
+    return array(
+        'columns' => array(
+            // идентификатор нашей сущности
+            'id' => array(
+                'type' => 'int',
+                'unsigned' => TRUE,
+                'not null' => FALSE,
+            ),
+        ),
+    );
+}

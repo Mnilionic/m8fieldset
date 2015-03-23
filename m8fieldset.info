@@ -1,0 +1,9 @@
+name = M8 Fieldset
+description = switchable collections for fields
+package = Mnilionic
+version = "7.x-1.0-alpha1"
+core = 7.x
+
+files[] = m8fieldset.module
+files[] = m8fieldset.types.inc
+files[] = m8fieldset.views.inc
